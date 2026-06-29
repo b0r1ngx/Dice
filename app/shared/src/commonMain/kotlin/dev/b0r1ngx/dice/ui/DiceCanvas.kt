@@ -49,7 +49,7 @@ fun DiceCanvas(
                    base.y + right.y * i + left.y * j + up.y * k)
 
         val top = Quad(corner(0, 0, 1), corner(1, 0, 1), corner(1, 1, 1), corner(0, 1, 1))
-        val leftSide = Quad(corner(0, 0, 0), corner(1, 0, 0), corner(1, 0, 1), corner(0, 0, 1))
+        val leftSide = Quad(corner(0, 1, 0), corner(1, 1, 0), corner(1, 1, 1), corner(0, 1, 1))
         val rightSide = Quad(corner(1, 0, 0), corner(1, 1, 0), corner(1, 1, 1), corner(1, 0, 1))
 
         val pipRadius = edge * 0.085f
@@ -60,7 +60,7 @@ fun DiceCanvas(
             drawQuad(rightSide, sideColor, edgeColor, stroke)
             drawQuad(top, topColor, edgeColor, stroke)
 
-            drawPips(pipPositions(leftSide.a, right, left), leftFace, pipColor, pipRadius)
+            drawPips(pipPositions(leftSide.a, right, up), leftFace, pipColor, pipRadius)
             drawPips(pipPositions(rightSide.a, left, up), rightFace, pipColor, pipRadius)
             drawPips(pipPositions(top.a, right, left), topFace, pipColor, pipRadius)
         }
