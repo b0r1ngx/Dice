@@ -61,6 +61,11 @@ fun DiceRollerScreen(modifier: Modifier = Modifier) {
                 modifier = Modifier.size(220.dp),
             )
             Spacer(Modifier.height(24.dp))
+            Text(
+                text = "Total: ${if (state.isRolling) "?" else state.face.pips}",
+                style = MaterialTheme.typography.headlineMedium,
+            )
+            Spacer(Modifier.height(24.dp))
             Button(onClick = state::roll, enabled = !state.isRolling) {
                 Text("Roll")
             }
