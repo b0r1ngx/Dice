@@ -9,41 +9,47 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import dev.b0r1ngx.dice.die.DieFace
 import dev.b0r1ngx.dice.die.rollD6
-import kotlin.math.ceil
+import kotlin.math.PI
 import kotlin.random.Random
 
 internal const val SPINS = 3
 internal const val ROLL_DURATION_MS = 1_200
-internal const val FACE_STEP_DEG = 60f
 
 /**
  * UI-layer state holder for the dice roller. Owns the roll animation so the
  * [DiceRollerScreen] composable stays declarative.
  *
  * The rolled *result* is decided by the Service layer ([rollD6] in `core`);
- * only animation/derived-display state lives here.
+ * only animation/derived-display state lives here. The 3D math itself is
+ * Compose-free and lives in [DiceGeometry].
  *
- * Two independent quantities are driven by a single progress value so that the
- * idle -> rolling -> settled states form one continuous curve:
- *  - [spinDeg]: the cube's visual rotation. Always `0` at rest (cube upright,
- *    result face on top), spins forward and returns upright at the end.
- *  - [displayFace]: a pure function of the continuous face phase, so there is
- *    no snap between the resting face and the rolling face.
+ * The die is a real rigid 3D body: each face has a fixed pip value, and the
+ * visible faces are a pure function of the cube's orientation ([orientation]).
+ * A roll animates the orientation from "previous result on top" to "new result
+ * on top" via quaternion slerp, plus extra full spins around a tumble axis so
+ * the idle -> rolling -> settled states form one continuous motion with no
+ * snaps and no value regeneration.
  */
 class DiceRollerState(
     private val random: Random = Random.Default,
 ) {
     private val progress = Animatable(0f)
-    private var restPhase by mutableStateOf(0f)
-    private var rollSpan by mutableStateOf(0f)
+    private var startQuat by mutableStateOf(Quat.identity())
+    private var targetQuat by mutableStateOf(Quat.identity())
+    private var restQuat by mutableStateOf(Quat.identity())
 
-    val spinDeg by derivedStateOf { progress.value * SPINS * 360f }
-
-    val displayFace by derivedStateOf {
-        val n = DieFace.entries.size
-        val step = (restPhase + progress.value * rollSpan) / FACE_STEP_DEG
-        DieFace.entries[((step.toInt() % n) + n) % n]
+    /** Current 3D orientation of the cube, animated during a roll. */
+    private val orientation: Quat by derivedStateOf {
+        val t = progress.value
+        if (t <= 0f) restQuat
+        else spinQuat(t) * slerp(startQuat, targetQuat, t)
     }
+
+    /** Rotation matrix derived from [orientation]; what the canvas renders. */
+    internal val rotationMatrix: Mat3 by derivedStateOf { orientation.toMat3() }
+
+    /** The face currently on top of the cube (live, even while tumbling). */
+    val topFace: DieFace by derivedStateOf { topFaceOf(rotationMatrix) }
 
     var face: DieFace by mutableStateOf(DieFace.ONE)
         private set
@@ -62,26 +68,20 @@ class DiceRollerState(
     }
 
     suspend fun runRollAnimation() {
-        val from = restPhase
-        val target = nextPhaseTarget(from, face)
-        rollSpan = target - from
+        startQuat = restQuat
+        targetQuat = orientationForFaceOnTop(face)
         progress.snapTo(0f)
         progress.animateTo(
             targetValue = 1f,
             animationSpec = tween(durationMillis = ROLL_DURATION_MS, easing = FastOutSlowInEasing),
         )
-        restPhase = target
+        restQuat = targetQuat
         progress.snapTo(0f)
         onSettled()
     }
 
-    private fun nextPhaseTarget(from: Float, targetFace: DieFace): Float {
-        val n = DieFace.entries.size
-        val minSteps = ceil((from + SPINS * 360f) / FACE_STEP_DEG).toInt()
-        var steps = minSteps
-        while (((steps % n) + n) % n != targetFace.ordinal) steps++
-        return steps * FACE_STEP_DEG
-    }
+    private fun spinQuat(t: Float): Quat =
+        Quat.fromAxisAngle(TUMBLE_AXIS, (SPINS * 2f * PI * t).toFloat())
 
     fun onSettled() {
         isRolling = false

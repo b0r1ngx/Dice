@@ -35,13 +35,12 @@ fun DiceRollerScreen(modifier: Modifier = Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             DiceCanvas(
-                rotationDeg = state.spinDeg,
-                topFace = state.displayFace,
+                rotationMatrix = state.rotationMatrix,
                 modifier = Modifier.size(220.dp),
             )
             Spacer(Modifier.height(24.dp))
             Text(
-                text = "Total: ${if (state.isRolling) "?" else state.face.pips}",
+                text = "Total: ${state.topFace.pips}",
                 style = MaterialTheme.typography.headlineMedium,
             )
             Spacer(Modifier.height(24.dp))
