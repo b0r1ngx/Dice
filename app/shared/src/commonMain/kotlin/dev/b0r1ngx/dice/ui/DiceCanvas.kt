@@ -96,4 +96,3 @@ private fun pipCells(face: DieFace): List<Int> = when (face) {
     DieFace.FIVE -> listOf(0, 2, 4, 6, 8)
     DieFace.SIX -> listOf(0, 2, 3, 5, 6, 8)
 }
-

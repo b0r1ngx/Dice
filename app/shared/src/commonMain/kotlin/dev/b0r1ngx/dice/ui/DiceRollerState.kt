@@ -10,7 +10,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import dev.b0r1ngx.dice.die.DieFace
 import dev.b0r1ngx.dice.die.rollD6
-import kotlin.coroutines.coroutineContext
 import kotlin.math.PI
 import kotlin.math.exp
 import kotlin.math.min
@@ -18,6 +17,7 @@ import kotlin.math.sqrt
 import kotlin.random.Random
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 
 internal const val SPINS = 3
@@ -154,7 +154,7 @@ class DiceRollerState(
         var startNanos = 0L
         var prevNanos = -1L
 
-        while (coroutineContext.isActive) {
+        while (currentCoroutineContext().isActive) {
             val now = withFrameNanos { it }
             if (prevNanos < 0L) {
                 startNanos = now
@@ -164,8 +164,8 @@ class DiceRollerState(
             val dt = ((now - prevNanos) / 1_000_000_000f).coerceIn(0f, 1f / 30f)
             prevNanos = now
 
-            velocity = velocity + Vec2(0f, GRAVITY_PX_PER_S2 * dt)
-            position = position + velocity * dt
+            velocity += Vec2(0f, GRAVITY_PX_PER_S2 * dt)
+            position += velocity * dt
 
             val cx = cw / 2f + position.x
             val cy = ch / 2f + position.y
@@ -177,7 +177,7 @@ class DiceRollerState(
             val impact = detectWallImpact(sil, containerRect)
             if (impact != null) {
                 val incoming = (-velocity.dot(impact.normal)).coerceAtLeast(0f)
-                position = position + impact.normal * impact.depth
+                position += impact.normal * impact.depth
                 velocity = bounceVelocity(velocity, impact.normal, RESTITUTION)
                 val intensity = (incoming / IMPACT_REF_SPEED_PX_PER_S).coerceIn(0f, 1f)
                 squash = squashForImpact(impact.normal, intensity, MAX_SQUASH)
