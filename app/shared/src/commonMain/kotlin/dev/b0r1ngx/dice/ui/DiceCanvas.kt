@@ -24,6 +24,8 @@ import kotlin.math.min
 internal fun DiceCanvas(
     rotationMatrix: Mat3,
     modifier: Modifier = Modifier,
+    position: Vec2 = Vec2(0f, 0f),
+    squash: Vec2 = Vec2(1f, 1f),
 ) {
     val topColor = MaterialTheme.colorScheme.surface
     val sideColor = MaterialTheme.colorScheme.surfaceVariant
@@ -31,11 +33,11 @@ internal fun DiceCanvas(
     val edgeColor = MaterialTheme.colorScheme.outlineVariant
 
     Canvas(modifier = modifier) {
-        val scale = min(size.width, size.height) * 0.46f
-        val cx = size.width / 2f
-        val cy = size.height / 2f
+        val scale = min(size.width, size.height) * CUBE_SCALE_FRACTION
+        val cx = size.width / 2f + position.x
+        val cy = size.height / 2f + position.y
 
-        val faces = visibleFaces(rotationMatrix, scale, cx, cy)
+        val faces = applySquash(visibleFaces(rotationMatrix, scale, cx, cy), squash, cx, cy)
 
         for (face in faces) {
             val fill = if (face.isTop) topColor else sideColor

@@ -12,6 +12,8 @@ internal const val SIN_30 = 0.5f
 
 internal val PIP_FRAC = floatArrayOf(0.24f, 0.5f, 0.76f)
 
+internal const val CUBE_SCALE_FRACTION = 0.25f
+
 internal val UP = Vec3(0f, 1f, 0f)
 
 internal val VIEW_DIR = Vec3(1f, 1f, 1f).normalized()
@@ -35,6 +37,7 @@ internal data class Vec2(val x: Float, val y: Float) {
     operator fun plus(o: Vec2) = Vec2(x + o.x, y + o.y)
     operator fun minus(o: Vec2) = Vec2(x - o.x, y - o.y)
     operator fun times(s: Float) = Vec2(x * s, y * s)
+    fun dot(o: Vec2) = x * o.x + y * o.y
     fun length() = sqrt(x * x + y * y)
 }
 
@@ -200,4 +203,60 @@ internal fun visibleFaces(
         )
     }
     return result.sortedBy { it.depth }
+}
+
+internal data class Rect2d(val minX: Float, val maxX: Float, val minY: Float, val maxY: Float)
+
+internal data class Impact(val normal: Vec2, val depth: Float)
+
+internal fun projectedSilhouette(faces: List<ProjectedFace>): Rect2d {
+    var minX = Float.POSITIVE_INFINITY
+    var maxX = Float.NEGATIVE_INFINITY
+    var minY = Float.POSITIVE_INFINITY
+    var maxY = Float.NEGATIVE_INFINITY
+    for (face in faces) {
+        for (c in face.corners) {
+            if (c.x < minX) minX = c.x
+            if (c.x > maxX) maxX = c.x
+            if (c.y < minY) minY = c.y
+            if (c.y > maxY) maxY = c.y
+        }
+    }
+    return Rect2d(minX, maxX, minY, maxY)
+}
+
+internal fun detectWallImpact(sil: Rect2d, container: Rect2d): Impact? {
+    val candidates = listOf(
+        Vec2(0f, 1f) to (container.minY - sil.minY),
+        Vec2(0f, -1f) to (sil.maxY - container.maxY),
+        Vec2(1f, 0f) to (container.minX - sil.minX),
+        Vec2(-1f, 0f) to (sil.maxX - container.maxX),
+    )
+    val (normal, depth) = candidates.maxBy { it.second }
+    return if (depth <= 0f) null else Impact(normal, depth)
+}
+
+internal fun bounceVelocity(velocity: Vec2, normal: Vec2, restitution: Float): Vec2 {
+    val vn = velocity.dot(normal)
+    if (vn >= 0f) return velocity
+    return velocity - normal * ((1f + restitution) * vn)
+}
+
+internal fun squashForImpact(normal: Vec2, intensity: Float, maxSquash: Float): Vec2 {
+    val k = intensity.coerceIn(0f, 1f) * maxSquash
+    val compress = 1f - k
+    val stretch = 1f + k
+    return if (normal.x != 0f) Vec2(compress, stretch) else Vec2(stretch, compress)
+}
+
+internal fun applySquash(
+    faces: List<ProjectedFace>,
+    squash: Vec2,
+    cx: Float,
+    cy: Float,
+): List<ProjectedFace> = faces.map { face ->
+    val scaled = face.corners.map { c ->
+        Vec2(cx + (c.x - cx) * squash.x, cy + (c.y - cy) * squash.y)
+    }
+    face.copy(corners = scaled)
 }
