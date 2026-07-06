@@ -1,8 +1,5 @@
 package dev.b0r1ngx.dice.ui
 
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -19,32 +16,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import dev.b0r1ngx.dice.die.DieFace
-
-private const val SPINS = 3
-private const val ROLL_DURATION_MS = 1_200
-private const val FACE_STEP_DEG = 60f
 
 @Composable
 fun DiceRollerScreen(modifier: Modifier = Modifier) {
     val state = remember { DiceRollerState() }
-    val rotation = remember { Animatable(0f) }
 
     LaunchedEffect(state.rollId) {
         if (state.rollId == 0L) return@LaunchedEffect
-        rotation.snapTo(0f)
-        rotation.animateTo(
-            targetValue = SPINS * 360f,
-            animationSpec = tween(durationMillis = ROLL_DURATION_MS, easing = FastOutSlowInEasing),
-        )
-        state.onSettled()
-    }
-
-    val currentRotation = rotation.value
-    val shownFace = if (state.isRolling) {
-        DieFace.entries[((currentRotation / FACE_STEP_DEG).toInt() % DieFace.entries.size)]
-    } else {
-        state.face
+        state.runRollAnimation()
     }
 
     MaterialTheme {
@@ -56,8 +35,8 @@ fun DiceRollerScreen(modifier: Modifier = Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             DiceCanvas(
-                rotationDeg = currentRotation,
-                topFace = shownFace,
+                rotationDeg = state.spinDeg,
+                topFace = state.displayFace,
                 modifier = Modifier.size(220.dp),
             )
             Spacer(Modifier.height(24.dp))
