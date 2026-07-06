@@ -101,8 +101,9 @@ class DiceRollerState(
 
     fun setContainerSize(widthPx: Float, heightPx: Float) {
         if (widthPx <= 0f || heightPx <= 0f) return
+        val firstLayout = container.x <= 0f || container.y <= 0f
         container = Vec2(widthPx, heightPx)
-        if (!isRolling) {
+        if (firstLayout && !isRolling) {
             position = restPosition()
             squash = Vec2(1f, 1f)
         }
@@ -129,7 +130,6 @@ class DiceRollerState(
 
         restQuat = targetQuat
         progress.snapTo(0f)
-        position = restPosition()
         squash = Vec2(1f, 1f)
         onSettled()
     }
@@ -147,7 +147,7 @@ class DiceRollerState(
         val dirX = if (random.nextBoolean()) 1f else -1f
         var velocity = Vec2(dirX * v0 * SIDE_DRIFT_FRACTION, -v0)
 
-        position = Vec2(0f, floorY)
+        position = Vec2(position.x, floorY)
         squash = Vec2(1f, 1f)
 
         val maxNanos = ROLL_DURATION_MS * 1_000_000L
