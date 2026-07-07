@@ -13,26 +13,24 @@ import dev.b0r1ngx.dice.die.rollD6
 import kotlin.math.PI
 import kotlin.math.exp
 import kotlin.math.min
-import kotlin.math.sqrt
 import kotlin.random.Random
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.launch
 
-internal const val SPINS = 3
-internal const val ROLL_DURATION_MS = 1_200
+internal const val SPINS = 10
+// with this we can control visible speed of die roll in air
+internal const val ROLL_DURATION_MS = 1_000
 
-internal const val GRAVITY_PX_PER_S2 = 4000f
 internal const val RESTITUTION = 0.5f
 internal const val MAX_SQUASH = 0.25f
-internal const val APEX_FRACTION = 1.1f
+// Apex height as a fraction of the die-space travel (kept < 1 so the arc never
+// punches the ceiling — the die always lands on the floor at [ROLL_DURATION_MS]).
+internal const val APEX_FRACTION = 0.85f
 internal const val SQUASH_DECAY_PER_S = 9f
-internal const val SETTLE_SPEED_PX_PER_S = 40f
 internal const val SIDE_DRIFT_FRACTION = 0.18f
 internal const val IMPACT_REF_SPEED_PX_PER_S = 1500f
-internal const val SETTLE_SAFETY_MS = 3_000
-internal const val HORIZONTAL_DRAG_PER_S = 1.0f
 
 /**
  * Compose state holder driving the dice roll: tumble orientation (quaternion
@@ -129,31 +127,30 @@ class DiceRollerState(
         val halfH = (startSil.maxY - startSil.minY) * 0.5f
         val floorY = ch / 2f - halfH
         val ceilingY = -ch / 2f + halfH
-        val travelH = (floorY - ceilingY).coerceAtLeast(1f) * APEX_FRACTION
-        val v0 = sqrt(2f * GRAVITY_PX_PER_S2 * travelH)
+        val travel = (floorY - ceilingY).coerceAtLeast(1f)
+        val apex = travel * APEX_FRACTION
+        val airTimeS = ROLL_DURATION_MS / 1000f
+        val gravity = 8f * apex / (airTimeS * airTimeS)
+        val launchSpeed = 4f * apex / airTimeS
         val dirX = if (random.nextBoolean()) 1f else -1f
-        var velocity = Vec2(dirX * v0 * SIDE_DRIFT_FRACTION, -v0)
+        var velocity = Vec2(dirX * launchSpeed * SIDE_DRIFT_FRACTION, -launchSpeed)
 
         position = Vec2(position.x, floorY)
         squash = Vec2(1f, 1f)
 
-        val maxNanos = SETTLE_SAFETY_MS * 1_000_000L
-        var startNanos = 0L
         var prevNanos = -1L
 
         while (currentCoroutineContext().isActive) {
             val now = withFrameNanos { it }
             if (prevNanos < 0L) {
-                startNanos = now
                 prevNanos = now
                 continue
             }
             val dt = ((now - prevNanos) / 1_000_000_000f).coerceIn(0f, 1f / 30f)
             prevNanos = now
 
-            velocity += Vec2(0f, GRAVITY_PX_PER_S2 * dt)
+            velocity += Vec2(0f, gravity * dt)
             position += velocity * dt
-            velocity = Vec2(velocity.x * exp(-HORIZONTAL_DRAG_PER_S * dt), velocity.y)
 
             val cx = cw / 2f + position.x
             val cy = ch / 2f + position.y
@@ -161,27 +158,17 @@ class DiceRollerState(
             val m = (spinQuat(t) * slerp(startQuat, targetQuat, t)).toMat3()
             val sil = projectedSilhouette(visibleFaces(m, scale, cx, cy))
 
-            velocity = resolveImpact(sil, containerRect, velocity)
-            decaySquash(dt)
-
-            if (hasSettled(velocity, sil, ch)) break
-            if (now - startNanos > maxNanos) {
-                position = Vec2(position.x, ch / 2f - (sil.maxY - sil.minY) * 0.5f)
-                velocity = Vec2(0f, 0f)
-                squash = Vec2(1f, 1f)
-                break
+            val impact = detectWallImpact(sil, containerRect)
+            if (impact != null) {
+                val incoming = (-velocity.dot(impact.normal)).coerceAtLeast(0f)
+                position += impact.normal * impact.depth
+                if (impact.normal.y < 0f) break // landed on the floor: rest here, no teleport
+                velocity = bounceVelocity(velocity, impact.normal, RESTITUTION)
+                val intensity = (incoming / IMPACT_REF_SPEED_PX_PER_S).coerceIn(0f, 1f)
+                squash = squashForImpact(impact.normal, intensity, MAX_SQUASH)
             }
+            decaySquash(dt)
         }
-    }
-
-    private fun resolveImpact(sil: Rect2d, containerRect: Rect2d, velocity: Vec2): Vec2 {
-        val impact = detectWallImpact(sil, containerRect) ?: return velocity
-        val incoming = (-velocity.dot(impact.normal)).coerceAtLeast(0f)
-        position += impact.normal * impact.depth
-        val bounced = bounceVelocity(velocity, impact.normal, RESTITUTION)
-        val intensity = (incoming / IMPACT_REF_SPEED_PX_PER_S).coerceIn(0f, 1f)
-        squash = squashForImpact(impact.normal, intensity, MAX_SQUASH)
-        return bounced
     }
 
     private fun decaySquash(dt: Float) {
@@ -190,12 +177,6 @@ class DiceRollerState(
             1f + (squash.x - 1f) * (1f - decay),
             1f + (squash.y - 1f) * (1f - decay),
         )
-    }
-
-    private fun hasSettled(velocity: Vec2, sil: Rect2d, ch: Float): Boolean {
-        val currentHalfH = (sil.maxY - sil.minY) * 0.5f
-        val currentFloorY = ch / 2f - currentHalfH
-        return velocity.length() < SETTLE_SPEED_PX_PER_S && position.y >= currentFloorY - 1f
     }
 
     private fun restPosition(): Vec2 {
