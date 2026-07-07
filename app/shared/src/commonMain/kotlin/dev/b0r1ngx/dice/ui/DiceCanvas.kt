@@ -12,14 +12,9 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import dev.b0r1ngx.dice.die.DieFace
 import kotlin.math.min
 
-/**
- * Renders the dice as a true 3D cube viewed isometrically. The cube's orientation
- * is given by [rotationMatrix]; visible faces are back-face culled and depth
- * sorted, so the rendered pips always belong to the faces that are actually
- * pointing toward the viewer. Pips are baked into the faces via [DiceGeometry],
- * so the body reads as a single solid object tumbling, not a shape with
- * swapping numbers.
- */
+private val PIP_FRAC = floatArrayOf(0.24f, 0.5f, 0.76f)
+
+/** Isometric 3D cube renderer; pips are baked into the visible faces. */
 @Composable
 internal fun DiceCanvas(
     rotationMatrix: Mat3,

@@ -33,24 +33,9 @@ internal const val SIDE_DRIFT_FRACTION = 0.18f
 internal const val IMPACT_REF_SPEED_PX_PER_S = 1500f
 
 /**
- * UI-layer state holder for the dice roller. Owns the roll animation so the
- * [DiceRollerScreen] composable stays declarative.
- *
- * The rolled *result* is decided by the Service layer ([rollD6] in `core`);
- * only animation/derived-display state lives here. The 3D math itself is
- * Compose-free and lives in [DiceGeometry].
- *
- * The die is a real rigid 3D body: each face has a fixed pip value, and the
- * visible faces are a pure function of the cube's orientation ([orientation]).
- * A roll animates the orientation from "previous result on top" to "new result
- * on top" via quaternion slerp, plus extra full spins around a tumble axis so
- * the idle -> rolling -> settled states form one continuous motion with no
- * snaps and no value regeneration.
- *
- * Alongside the tumble, the cube is launched upward and falls under gravity
- * inside its container, bouncing off the walls with a damped squash-and-stretch
- * "resist" on impact, until it settles on the floor. The container size is
- * reported by the die-space layout via [setContainerSize].
+ * Compose state holder driving the dice roll: tumble orientation (quaternion
+ * slerp + spins) and the gravity/bounce/squash physics loop. The rolled
+ * [face] is decided by `core`'s [rollD6]; only animation state lives here.
  */
 class DiceRollerState(
     private val random: Random = Random.Default,
@@ -171,29 +156,38 @@ class DiceRollerState(
             val cy = ch / 2f + position.y
             val t = progress.value
             val m = (spinQuat(t) * slerp(startQuat, targetQuat, t)).toMat3()
-            val faces = visibleFaces(m, scale, cx, cy)
-            val sil = projectedSilhouette(faces)
+            val sil = projectedSilhouette(visibleFaces(m, scale, cx, cy))
 
-            val impact = detectWallImpact(sil, containerRect)
-            if (impact != null) {
-                val incoming = (-velocity.dot(impact.normal)).coerceAtLeast(0f)
-                position += impact.normal * impact.depth
-                velocity = bounceVelocity(velocity, impact.normal, RESTITUTION)
-                val intensity = (incoming / IMPACT_REF_SPEED_PX_PER_S).coerceIn(0f, 1f)
-                squash = squashForImpact(impact.normal, intensity, MAX_SQUASH)
-            }
+            velocity = resolveImpact(sil, containerRect, velocity)
+            decaySquash(dt)
 
-            val decay = 1f - exp(-SQUASH_DECAY_PER_S * dt)
-            squash = Vec2(
-                1f + (squash.x - 1f) * (1f - decay),
-                1f + (squash.y - 1f) * (1f - decay),
-            )
-
-            val currentHalfH = (sil.maxY - sil.minY) * 0.5f
-            val currentFloorY = ch / 2f - currentHalfH
-            if (velocity.length() < SETTLE_SPEED_PX_PER_S && position.y >= currentFloorY - 1f) break
+            if (hasSettled(velocity, sil, ch)) break
             if (now - startNanos > maxNanos) break
         }
+    }
+
+    private fun resolveImpact(sil: Rect2d, containerRect: Rect2d, velocity: Vec2): Vec2 {
+        val impact = detectWallImpact(sil, containerRect) ?: return velocity
+        val incoming = (-velocity.dot(impact.normal)).coerceAtLeast(0f)
+        position += impact.normal * impact.depth
+        val bounced = bounceVelocity(velocity, impact.normal, RESTITUTION)
+        val intensity = (incoming / IMPACT_REF_SPEED_PX_PER_S).coerceIn(0f, 1f)
+        squash = squashForImpact(impact.normal, intensity, MAX_SQUASH)
+        return bounced
+    }
+
+    private fun decaySquash(dt: Float) {
+        val decay = 1f - exp(-SQUASH_DECAY_PER_S * dt)
+        squash = Vec2(
+            1f + (squash.x - 1f) * (1f - decay),
+            1f + (squash.y - 1f) * (1f - decay),
+        )
+    }
+
+    private fun hasSettled(velocity: Vec2, sil: Rect2d, ch: Float): Boolean {
+        val currentHalfH = (sil.maxY - sil.minY) * 0.5f
+        val currentFloorY = ch / 2f - currentHalfH
+        return velocity.length() < SETTLE_SPEED_PX_PER_S && position.y >= currentFloorY - 1f
     }
 
     private fun restPosition(): Vec2 {
