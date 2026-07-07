@@ -31,6 +31,8 @@ internal const val SQUASH_DECAY_PER_S = 9f
 internal const val SETTLE_SPEED_PX_PER_S = 40f
 internal const val SIDE_DRIFT_FRACTION = 0.18f
 internal const val IMPACT_REF_SPEED_PX_PER_S = 1500f
+internal const val SETTLE_SAFETY_MS = 3_000
+internal const val HORIZONTAL_DRAG_PER_S = 1.0f
 
 /**
  * Compose state holder driving the dice roll: tumble orientation (quaternion
@@ -135,7 +137,7 @@ class DiceRollerState(
         position = Vec2(position.x, floorY)
         squash = Vec2(1f, 1f)
 
-        val maxNanos = ROLL_DURATION_MS * 1_000_000L
+        val maxNanos = SETTLE_SAFETY_MS * 1_000_000L
         var startNanos = 0L
         var prevNanos = -1L
 
@@ -151,6 +153,7 @@ class DiceRollerState(
 
             velocity += Vec2(0f, GRAVITY_PX_PER_S2 * dt)
             position += velocity * dt
+            velocity = Vec2(velocity.x * exp(-HORIZONTAL_DRAG_PER_S * dt), velocity.y)
 
             val cx = cw / 2f + position.x
             val cy = ch / 2f + position.y
@@ -162,7 +165,12 @@ class DiceRollerState(
             decaySquash(dt)
 
             if (hasSettled(velocity, sil, ch)) break
-            if (now - startNanos > maxNanos) break
+            if (now - startNanos > maxNanos) {
+                position = Vec2(position.x, ch / 2f - (sil.maxY - sil.minY) * 0.5f)
+                velocity = Vec2(0f, 0f)
+                squash = Vec2(1f, 1f)
+                break
+            }
         }
     }
 
