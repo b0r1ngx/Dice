@@ -9,7 +9,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeCap
 import dev.b0r1ngx.dice.die.DieFace
+import kotlin.math.atan2
 import kotlin.math.min
 
 private val PIP_FRAC = floatArrayOf(0.24f, 0.5f, 0.76f)
@@ -36,14 +38,16 @@ internal fun DiceCanvas(
 
         for (face in faces) {
             val fill = if (face.isTop) topColor else sideColor
-            val strokeW = face.edgeLen * 0.04f
-            val stroke = Stroke(width = strokeW)
             val corners = face.corners.map { Offset(it.x, it.y) }
 
-            drawQuad(corners, fill, edgeColor, stroke)
+            fillQuad(corners, fill)
 
             val pipRadius = face.edgeLen * 0.085f
             drawPips(pipPositions(corners), face.value, pipColor, pipRadius)
+        }
+
+        if (faces.isNotEmpty()) {
+            drawWireframe(faces, edgeColor, faces.first().edgeLen * 0.04f)
         }
     }
 }
@@ -65,7 +69,7 @@ private fun pipPositions(corners: List<Offset>): List<Offset> {
     }
 }
 
-private fun DrawScope.drawQuad(corners: List<Offset>, fill: Color, stroke: Color, strokeStyle: Stroke) {
+private fun DrawScope.fillQuad(corners: List<Offset>, fill: Color) {
     val path = Path().apply {
         moveTo(corners[0].x, corners[0].y)
         lineTo(corners[1].x, corners[1].y)
@@ -74,7 +78,43 @@ private fun DrawScope.drawQuad(corners: List<Offset>, fill: Color, stroke: Color
         close()
     }
     drawPath(path, fill)
-    drawPath(path, stroke, style = strokeStyle)
+}
+
+/**
+ * Draws each cube edge exactly once. The outer silhouette is one closed path
+ * (regular-hexagon corners stay crisp via miter joins pointing outward); the
+ * three internal edges are separate butt-capped segments that terminate
+ * precisely at the shared central vertex, so they no longer overshoot it.
+ */
+private fun DrawScope.drawWireframe(
+    faces: List<ProjectedFace>,
+    stroke: Color,
+    strokeW: Float,
+) {
+    if (faces.isEmpty()) return
+    val grouped = faces.flatMap { it.corners }.groupBy { it }
+    val center = grouped.maxByOrNull { it.value.size }!!.key
+    val outer = grouped.keys.filter { it != center }
+    if (outer.size < 3) return
+    val centroid = outer.reduce { a, b -> a + b } * (1f / outer.size)
+    val hexagon = outer.sortedBy { atan2(it.y - centroid.y, it.x - centroid.x) }
+
+    val outline = Path().apply {
+        moveTo(hexagon[0].x, hexagon[0].y)
+        for (i in 1 until hexagon.size) lineTo(hexagon[i].x, hexagon[i].y)
+        close()
+    }
+    drawPath(outline, stroke, style = Stroke(width = strokeW))
+
+    val internalTips = grouped.filter { it.key != center && it.value.size >= 2 }.keys
+    val edgeStyle = Stroke(width = strokeW, cap = StrokeCap.Butt)
+    for (tip in internalTips) {
+        val edge = Path().apply {
+            moveTo(center.x, center.y)
+            lineTo(tip.x, tip.y)
+        }
+        drawPath(edge, stroke, style = edgeStyle)
+    }
 }
 
 private fun DrawScope.drawPips(positions: List<Offset>, face: DieFace, color: Color, radius: Float) {
